@@ -1,11 +1,14 @@
 #include "utils.h"
+#include <avr/io.h>          // includes <avr/iom328p.h>
+#include <avr/interrupt.h>   // defines ISR() macro
 
 
 /////////////////// GLOBAL VARIABLES /////////////////////
 //////////////////////////////////////////////////////////
 const int BUTTON_PINS[NUM_BUTTONS] = {7, 6, 5, 4};
-const int LED_PINS[NUM_BUTTONS]    = {13, 12, 11, 10};
+const int LED_PINS[NUM_BUTTONS]    = {8, 9, 10, 11};
 const int TONES[NUM_BUTTONS]       = {262, 294, 330, 349};
+const uint8_t BUTTONS_BITS         = 0b11110000;
 
 const int BUZZER_PIN = 3;
 const int TONE_DURATION_MS = 150;
@@ -16,7 +19,13 @@ int lastButtonState[NUM_BUTTONS] = {HIGH, HIGH, HIGH, HIGH};
 
 int buttonReading[NUM_BUTTONS] = {HIGH, HIGH, HIGH, HIGH};
 
+
 const long DEBOUNCE_DELAY = 50; // ms
+
+volatile uint8_t pinD_state = 0b11110000;
+volatile bool confirm_sequence = false;
+volatile bool button_pressed = false;
+//static volatile int count = 0;
 
 // Game OVER SOUND
 const int game_over_freqs[] = {
@@ -36,6 +45,27 @@ volatile int nodeSize = 0;
 //////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////
 
+
+//////////////// ISR ////////////////////////
+////////////////////////////////////////////
+ISR ( PCINT2_vect )
+{
+  static int intCount = 0;
+  
+  if (pinD_state < (PIND & BUTTONS_BITS))
+  {
+    confirm_sequence = true;
+    PORTB &= BUTTONS_BITS;
+    return;
+  }
+  button_pressed = true;
+  pinD_state = PIND & BUTTONS_BITS;
+}
+
+////////////////////////////////////////////
+///////////////////////////////////////////
+
+
 void setup_pins_and_buttons()
 {
   for (int i = 0; i < NUM_BUTTONS; i++) {
@@ -44,60 +74,62 @@ void setup_pins_and_buttons()
   }
 }
 
-int check_buttons()
-{
-  while(true)
-  {
-    for (int i = 0; i < NUM_BUTTONS; i++) {
-      
-      int reading = digitalRead(BUTTON_PINS[i]);
+void enablePortDInterrupts() {
+  cli();
+  PCICR |= (1 << PCIE2);
+  PCIFR = 0b00000111;
+  PCMSK2 |= (1 << PCINT20) | (1 << PCINT21) | (1 << PCINT22) | (1 << PCINT23);
+  sei();
+}
 
-      if (reading != buttonReading[i]) {
-        // The button state has changed (it's bouncing or the press/release started), 
-        // so reset the debouncing timer.
-        lastDebounceTime[i] = millis();
-      }
-      
-      if ((millis() - lastDebounceTime[i]) > DEBOUNCE_DELAY) {
-  
-        // Check if the current reading is different from the *last known stable state*.
-        // This is the core logic: only act if the stable state has changed.
-        if (reading != lastButtonState[i]) {
-          // Save the new stable state
-          lastButtonState[i] = reading;
-  
-          if (lastButtonState[i] == LOW) {
-            // Button is stable and pressed (LOW)
-            digitalWrite(LED_PINS[i], HIGH);
-            // Play a non-blocking tone
-            tone(BUZZER_PIN, TONES[i]); 
-          } else {
-            // Button is stable and released (HIGH)
-            digitalWrite(LED_PINS[i], LOW);
-            // (Optional) Stop the tone if released before duration ends, 
-            // though the tone() with duration usually handles this.
-            noTone(BUZZER_PIN);
-  
-            return i;
-          }
+void disablePortDInterrupts() {
+  cli();
+  PCICR &= ~(1 << PCIE2);
+  PCIFR = 0b00000111;
+  sei();
+}
+
+void check_buttons()
+{
+  enablePortDInterrupts();
+  while (!confirm_sequence)
+  {
+    if (button_pressed)
+    {
+      button_pressed = false;
+      int frequency = 0, count = 0;
+      for (uint8_t i = 4; i < 8; i++)
+      { 
+        if (!(pinD_state & (1 << i)))
+        {
+          frequency += TONES[i - 4];
+          count++;
         }
       }
-      // 5. Save the *current raw reading* for the next loop's state change detection
-      buttonReading[i] = reading;
+      if (count == 0)
+        continue;
+      PORTB = (~pinD_state >> 4) & 0x0F;
+      tone(BUZZER_PIN, frequency / count);
     }
+    delay(1);
   }
+
+  disablePortDInterrupts();
+  confirm_sequence = false;
+  noTone(BUZZER_PIN);
 }
 
 void welcome_melody()
 {
     for (int i = 0; i < NUM_BUTTONS; i++) {
-      activate_color(i, 100);
+      activate_color((1 << i), 100);
     }
 }
 
 void play_sequence()
 {
-  int nextColor = random(0, NUM_BUTTONS);
+//  int nextColor = 1 << random(0, NUM_BUTTONS);
+  int nextColor = random(1, 15);
   Node* newNode = new Node{nextColor, nullptr};
   
   if (head == nullptr) {
@@ -135,12 +167,25 @@ void reset_sequence()
   nodeSize = 0;
 }
 
-void activate_color(int color, int timeDelay)
+void activate_color(uint8_t color, int timeDelay)
 {
-  digitalWrite(LED_PINS[color], HIGH);
-  tone(BUZZER_PIN, TONES[color]);
+  PORTB |= color;
+
+  int frequency = 0;
+  int count = 0;
+  // Loop through bits 0-4 to find which color is activated
+  for (uint8_t i = 0; i < 4; i++) {
+    if (color & (1 << i)) {
+      frequency += TONES[i];
+      count++;
+    }
+  }
+  frequency /= count;
+  tone(BUZZER_PIN, frequency);
+  
   delay(timeDelay);
-  digitalWrite(LED_PINS[color], LOW);
+  
+  PORTB &= ~color;
   noTone(BUZZER_PIN);
   delay(timeDelay);
 }
@@ -152,16 +197,22 @@ void validate_sequence()
 
   for (int i = 0; i < nodeSize; i++)
   {
-    pressedButton = check_buttons();
+    check_buttons();
     
-    if (pressedButton != nextNode->value)
+    // Buttons are input pull up --> need to reverse the buttons bits + shift 4 bits to fit with the LED pins
+    uint8_t pressedButtons = (~pinD_state & BUTTONS_BITS) >> 4; 
+    if (pressedButtons != nextNode->value)
     {
+      pinD_state = BUTTONS_BITS;
       play_game_over();
       reset_sequence();
       return;
     }
 
+    pinD_state = BUTTONS_BITS;
+    
     nextNode = nextNode->next;
+    delay(10);
   }
   
 }

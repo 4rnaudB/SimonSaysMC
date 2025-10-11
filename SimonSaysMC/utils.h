@@ -33,9 +33,11 @@ extern int buttonReading[NUM_BUTTONS];
 
 extern const long DEBOUNCE_DELAY;
 
+extern volatile uint8_t pinD_state;
+
 // Sequence params
 struct Node {
-  int value;
+  uint8_t value;
   Node* next;
 };
 
@@ -50,7 +52,11 @@ extern volatile int nodeSize;
 
 void setup_pins_and_buttons();
 
-int check_buttons();
+void enablePortDInterrupts();
+
+void disablePortDInterrupts();
+
+void check_buttons();
 
 void welcome_melody();
 
@@ -58,10 +64,14 @@ void play_sequence();
 
 void reset_sequence();
 
-void activate_color(int color, int timeDelay);
+void activate_color(uint8_t color, int timeDelay);
 
 void validate_sequence();
 
 void play_game_over();
+
+void enableISR();
+
+void disableISR();
 
 #endif

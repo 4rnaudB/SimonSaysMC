@@ -5,8 +5,8 @@
 void setup() {
   setup_pins_and_buttons();
   randomSeed(analogRead(A0));
+  Serial.begin(115200);
   welcome_melody();
-//  Serial.begin(115200);
   delay(500);
 }
 

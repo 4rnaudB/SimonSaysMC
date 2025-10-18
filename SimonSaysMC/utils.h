@@ -4,6 +4,7 @@
 ////////////////////////////////////////////////
 
 #include <Arduino.h>
+#include "Display.h"
 
 ////////////////////////////////////////////////
 ////////////////////////////////////////////////
@@ -35,6 +36,10 @@ extern const long DEBOUNCE_DELAY;
 
 extern volatile uint8_t pinD_state;
 
+extern uint8_t lvl;
+
+extern Display* lcd_display;
+
 // Sequence params
 struct Node {
   uint8_t value;
@@ -49,12 +54,15 @@ extern volatile int nodeSize;
 
 /////////////////// FUNCTIONS ////////////////////////////
 //////////////////////////////////////////////////////////
+void choose_level();
+
+void load_screen();
 
 void setup_pins_and_buttons();
 
-void enablePortDInterrupts();
+void enable_portD_Interrupts();
 
-void disablePortDInterrupts();
+void disable_portD_interrupts();
 
 void check_buttons();
 
@@ -66,7 +74,7 @@ void reset_sequence();
 
 void activate_color(uint8_t color, int timeDelay);
 
-void validate_sequence();
+bool validate_sequence();
 
 void play_game_over();
 

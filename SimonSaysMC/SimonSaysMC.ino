@@ -3,6 +3,7 @@
 #include "utils.h"
 
 void setup() {
+  load_screen();
   setup_pins_and_buttons();
   randomSeed(analogRead(A0));
   Serial.begin(115200);
@@ -13,8 +14,13 @@ void setup() {
 // --- Main Loop ---
 
 void loop() {
-  play_sequence();
-  validate_sequence();
-   delay(500);
-  //check_buttons();
+  choose_level();
+
+  while ( true )
+  {
+    play_sequence();
+    if (!validate_sequence())
+      break;
+    delay(500);
+  }
 }

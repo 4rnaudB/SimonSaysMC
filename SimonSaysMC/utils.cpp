@@ -26,6 +26,10 @@ volatile uint8_t pinD_state = 0b11110000;
 volatile bool confirm_sequence = false;
 volatile bool button_pressed = false;
 //static volatile int count = 0;
+uint8_t lvl = 0;
+
+// Display
+Display* lcd_display = nullptr;
 
 // Game OVER SOUND
 const int game_over_freqs[] = {
@@ -50,8 +54,6 @@ volatile int nodeSize = 0;
 ////////////////////////////////////////////
 ISR ( PCINT2_vect )
 {
-  static int intCount = 0;
-  
   if (pinD_state < (PIND & BUTTONS_BITS))
   {
     confirm_sequence = true;
@@ -65,6 +67,53 @@ ISR ( PCINT2_vect )
 ////////////////////////////////////////////
 ///////////////////////////////////////////
 
+void choose_level()
+{
+  while (true)
+  {
+    lcd_display->write_text("Easy: Blue\nHard: Red");
+    enable_portD_Interrupts();
+
+    while (!button_pressed)
+    {
+      delay(100);
+    }
+
+    disable_portD_interrupts();
+    button_pressed = false;
+    Serial.println(~pinD_state & 0xF0);
+
+    if ((~pinD_state & 0xF0) == 0b10000000) // blue button
+    {
+      lvl = 1;
+      break;
+    }
+    else if ((~pinD_state & 0xF0) == 0b01000000) // red button
+    {
+      lvl = 2;
+      break;
+    }
+    else // wrong button pressed
+    {
+      lcd_display->write_text("Wrong button pressed");
+      delay(1000);
+      // Loop repeats, prompting user again
+    }
+  }
+
+   // Reset portD
+   pinD_state = BUTTONS_BITS;
+
+   // Wait 2 seconds before starting sequence
+   lcd_display->write_text("Let's play...");
+   delay(2000);
+}
+
+
+void load_screen()
+{
+  lcd_display = new Display();
+}
 
 void setup_pins_and_buttons()
 {
@@ -74,7 +123,7 @@ void setup_pins_and_buttons()
   }
 }
 
-void enablePortDInterrupts() {
+void enable_portD_Interrupts() {
   cli();
   PCICR |= (1 << PCIE2);
   PCIFR = 0b00000111;
@@ -82,7 +131,7 @@ void enablePortDInterrupts() {
   sei();
 }
 
-void disablePortDInterrupts() {
+void disable_portD_interrupts() {
   cli();
   PCICR &= ~(1 << PCIE2);
   PCIFR = 0b00000111;
@@ -91,7 +140,7 @@ void disablePortDInterrupts() {
 
 void check_buttons()
 {
-  enablePortDInterrupts();
+  enable_portD_Interrupts();
   while (!confirm_sequence)
   {
     if (button_pressed)
@@ -114,7 +163,7 @@ void check_buttons()
     delay(1);
   }
 
-  disablePortDInterrupts();
+  disable_portD_interrupts();
   confirm_sequence = false;
   noTone(BUZZER_PIN);
 }
@@ -128,8 +177,12 @@ void welcome_melody()
 
 void play_sequence()
 {
-//  int nextColor = 1 << random(0, NUM_BUTTONS);
-  int nextColor = random(1, 15);
+  static int nextColor;
+  if (lvl == 1) // only 1 color at a time
+    nextColor = 1 << random(0, NUM_BUTTONS);
+  else // lvl 2, can be between 1 and 4 colors
+    nextColor = random(1, 15);
+    
   Node* newNode = new Node{nextColor, nullptr};
   
   if (head == nullptr) {
@@ -190,7 +243,7 @@ void activate_color(uint8_t color, int timeDelay)
   delay(timeDelay);
 }
 
-void validate_sequence()
+bool validate_sequence()
 {
   int pressedButton;
   Node* nextNode = head;
@@ -206,7 +259,7 @@ void validate_sequence()
       pinD_state = BUTTONS_BITS;
       play_game_over();
       reset_sequence();
-      return;
+      return false;
     }
 
     pinD_state = BUTTONS_BITS;
@@ -214,6 +267,8 @@ void validate_sequence()
     nextNode = nextNode->next;
     delay(10);
   }
+
+  return true;
   
 }
 

@@ -5,7 +5,7 @@
 
 #include <Arduino.h>
 #include "Display.h"
-
+#include <EEPROM.h>
 ////////////////////////////////////////////////
 ////////////////////////////////////////////////
 
@@ -77,6 +77,8 @@ void activate_color(uint8_t color, int timeDelay);
 bool validate_sequence();
 
 void play_game_over();
+
+void save_high_score(uint8_t score);
 
 void enableISR();
 

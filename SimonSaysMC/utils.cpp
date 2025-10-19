@@ -31,6 +31,12 @@ uint8_t lvl = 0;
 // Display
 Display* lcd_display = nullptr;
 
+// EEPROM MEMORY
+const int EASY_SLOT_1 = 0;
+const int EASY_SLOT_2 = 1;
+const int HARD_SLOT_1 = 2;
+const int HARD_SLOT_2 = 3;
+
 // Game OVER SOUND
 const int game_over_freqs[] = {
   392,  // Note 1 (Highest)
@@ -81,7 +87,6 @@ void choose_level()
 
     disable_portD_interrupts();
     button_pressed = false;
-    Serial.println(~pinD_state & 0xF0);
 
     if ((~pinD_state & 0xF0) == 0b10000000) // blue button
     {
@@ -272,7 +277,8 @@ bool validate_sequence()
   
 }
 
-void play_game_over() {
+void play_game_over()
+{
   for (int i = 0; i < NUM_NOTES; i++) {
     // Play the tone for a set duration
     tone(BUZZER_PIN, game_over_freqs[i], 150);
@@ -284,4 +290,48 @@ void play_game_over() {
   // Ensure the sound is fully off after the sequence
   noTone(BUZZER_PIN);
   delay(1000);
+}
+
+void save_high_score(uint8_t score)
+{
+  int high_score_address;
+  int high_score;
+  if ( lvl == 1)
+  {
+    if ((uint8_t)EEPROM.read(EASY_SLOT_1) < (uint8_t)EEPROM.read(EASY_SLOT_2))
+    {
+      high_score_address = EASY_SLOT_1;
+      high_score = EEPROM.read(EASY_SLOT_2);
+    }
+    else
+    {
+      high_score_address = EASY_SLOT_2;
+      high_score = EEPROM.read(EASY_SLOT_1);
+    }
+  }
+  else // lvl = 2
+  {
+    if ((uint8_t)EEPROM.read(HARD_SLOT_1) < (uint8_t)EEPROM.read(HARD_SLOT_2))
+    {
+      high_score_address = HARD_SLOT_1;
+      high_score = EEPROM.read(HARD_SLOT_2);
+    }
+    else
+    {
+      high_score_address = HARD_SLOT_2;
+      high_score = EEPROM.read(HARD_SLOT_1);
+    }
+  }
+  
+  if (score > high_score)
+  {
+     EEPROM.update(high_score_address, score);
+     high_score = score;
+  }
+   
+  char buffer[33] = "";
+  sprintf(buffer, "score:%d / HS:%d\nBlue = restart", score, high_score);
+  lcd_display->write_text(buffer);
+  while (digitalRead(BUTTON_PINS[BLUE])) {delay(100);}
+  delay(100);
 }
